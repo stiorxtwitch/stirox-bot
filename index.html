@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MonBot — Bot Discord Polyvalent</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0a0b0f;
+      --surface: #11131a;
+      --surface2: #181b25;
+      --border: rgba(255,255,255,0.06);
+      --accent: #5865f2;
+      --accent2: #7289da;
+      --glow: rgba(88,101,242,0.35);
+      --text: #e8eaf0;
+      --muted: #6c7280;
+      --green: #57f287;
+      --red: #ff4757;
+      --yellow: #f9ca24;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ---- GRAIN OVERLAY ---- */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.5;
+    }
+
+    /* ---- MESH BACKGROUND ---- */
+    .mesh {
+      position: fixed;
+      top: -20%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 900px;
+      height: 900px;
+      background: radial-gradient(ellipse at 30% 30%, rgba(88,101,242,0.18) 0%, transparent 60%),
+                  radial-gradient(ellipse at 70% 70%, rgba(114,137,218,0.12) 0%, transparent 60%);
+      pointer-events: none;
+      z-index: 0;
+      animation: meshFloat 8s ease-in-out infinite;
+    }
+
+    @keyframes meshFloat {
+      0%, 100% { transform: translateX(-50%) translateY(0); }
+      50% { transform: translateX(-50%) translateY(-30px); }
+    }
+
+    /* ---- NAV ---- */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 clamp(1.5rem, 5vw, 4rem);
+      height: 64px;
+      background: rgba(10,11,15,0.85);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: 1.2rem;
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    .nav-logo {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      box-shadow: 0 0 20px var(--glow);
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 2rem;
+    }
+
+    .nav-links a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover { color: var(--text); }
+
+    .btn-invite-nav {
+      background: var(--accent);
+      color: #fff;
+      padding: 0.5rem 1.2rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      text-decoration: none;
+      transition: all 0.2s;
+      box-shadow: 0 0 20px var(--glow);
+    }
+
+    .btn-invite-nav:hover {
+      background: var(--accent2);
+      transform: translateY(-1px);
+    }
+
+    /* ---- HERO ---- */
+    .hero {
+      position: relative;
+      z-index: 1;
+      min-height: calc(100vh - 64px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 4rem clamp(1.5rem, 5vw, 4rem);
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(87,242,135,0.1);
+      border: 1px solid rgba(87,242,135,0.2);
+      border-radius: 100px;
+      padding: 0.4rem 1rem;
+      font-size: 0.8rem;
+      color: var(--green);
+      font-weight: 500;
+      margin-bottom: 2rem;
+      animation: fadeDown 0.6s ease both;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(87,242,135,0.4); }
+      50% { box-shadow: 0 0 0 6px rgba(87,242,135,0); }
+    }
+
+    .hero-title {
+      font-family: 'Syne', sans-serif;
+      font-size: clamp(3rem, 8vw, 6.5rem);
+      font-weight: 800;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+      animation: fadeDown 0.7s ease 0.1s both;
+    }
+
+    .hero-title span {
+      background: linear-gradient(135deg, var(--accent), #a78bfa, var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-sub {
+      margin-top: 1.5rem;
+      font-size: clamp(1rem, 2vw, 1.25rem);
+      color: var(--muted);
+      max-width: 600px;
+      line-height: 1.7;
+      font-weight: 300;
+      animation: fadeDown 0.7s ease 0.2s both;
+    }
+
+    .hero-cta {
+      margin-top: 2.5rem;
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      animation: fadeDown 0.7s ease 0.3s both;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--accent);
+      color: #fff;
+      padding: 0.9rem 2rem;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 1rem;
+      text-decoration: none;
+      transition: all 0.25s;
+      box-shadow: 0 0 40px var(--glow), 0 4px 20px rgba(0,0,0,0.3);
+      font-family: 'Syne', sans-serif;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent2);
+      transform: translateY(-3px);
+      box-shadow: 0 0 60px var(--glow), 0 8px 30px rgba(0,0,0,0.4);
+    }
+
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--surface2);
+      color: var(--text);
+      padding: 0.9rem 2rem;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 1rem;
+      text-decoration: none;
+      transition: all 0.25s;
+      border: 1px solid var(--border);
+      font-family: 'Syne', sans-serif;
+    }
+
+    .btn-secondary:hover {
+      background: var(--surface);
+      transform: translateY(-3px);
+      border-color: rgba(255,255,255,0.12);
+    }
+
+    .hero-stats {
+      margin-top: 4rem;
+      display: flex;
+      gap: clamp(2rem, 5vw, 5rem);
+      animation: fadeDown 0.7s ease 0.4s both;
+    }
+
+    .stat {
+      text-align: center;
+    }
+
+    .stat-num {
+      font-family: 'Syne', sans-serif;
+      font-size: 2rem;
+      font-weight: 800;
+      color: var(--accent);
+    }
+
+    .stat-label {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    /* ---- SECTIONS ---- */
+    section {
+      position: relative;
+      z-index: 1;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 clamp(1.5rem, 5vw, 4rem);
+    }
+
+    .section-header {
+      text-align: center;
+      margin-bottom: 4rem;
+    }
+
+    .section-tag {
+      display: inline-block;
+      background: rgba(88,101,242,0.12);
+      border: 1px solid rgba(88,101,242,0.25);
+      border-radius: 100px;
+      padding: 0.3rem 1rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--accent2);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 1rem;
+    }
+
+    .section-title {
+      font-family: 'Syne', sans-serif;
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .section-desc {
+      margin-top: 1rem;
+      color: var(--muted);
+      font-size: 1.05rem;
+      max-width: 500px;
+      margin-left: auto;
+      margin-right: auto;
+      line-height: 1.7;
+    }
+
+    /* ---- FEATURES GRID ---- */
+    #features {
+      padding: 6rem 0;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 2rem;
+      transition: all 0.3s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .feature-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, var(--accent) 0%, transparent 100%);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .feature-card:hover {
+      border-color: rgba(88,101,242,0.3);
+      transform: translateY(-4px);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3), 0 0 40px rgba(88,101,242,0.1);
+    }
+
+    .feature-card:hover::before { opacity: 0.03; }
+
+    .feature-icon {
+      width: 52px;
+      height: 52px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      margin-bottom: 1.2rem;
+    }
+
+    .feature-card h3 {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 0.6rem;
+    }
+
+    .feature-card p {
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+
+    .feature-list {
+      margin-top: 0.8rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+    }
+
+    .feature-list li {
+      color: var(--muted);
+      font-size: 0.85rem;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .feature-list li::before {
+      content: '→';
+      color: var(--accent2);
+      font-size: 0.8rem;
+    }
+
+    /* ---- COMMANDS SECTION ---- */
+    #commands {
+      padding: 6rem 0;
+      background: linear-gradient(180deg, transparent, rgba(17,19,26,0.5), transparent);
+    }
+
+    .commands-tabs {
+      display: flex;
+      gap: 0.5rem;
+      justify-content: center;
+      margin-bottom: 2.5rem;
+      flex-wrap: wrap;
+    }
+
+    .tab-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      padding: 0.5rem 1.2rem;
+      color: var(--muted);
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: inherit;
+    }
+
+    .tab-btn.active, .tab-btn:hover {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    .commands-grid {
+      display: none;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1rem;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .commands-grid.active { display: grid; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .cmd-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.2rem 1.4rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      transition: border-color 0.2s;
+    }
+
+    .cmd-card:hover { border-color: rgba(88,101,242,0.3); }
+
+    .cmd-name {
+      font-family: 'Courier New', monospace;
+      font-size: 0.9rem;
+      color: var(--accent2);
+      background: rgba(88,101,242,0.1);
+      padding: 0.25rem 0.6rem;
+      border-radius: 6px;
+      display: inline-block;
+      width: fit-content;
+    }
+
+    .cmd-desc {
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    /* ---- SETUP SECTION ---- */
+    #setup {
+      padding: 6rem 0;
+    }
+
+    .steps-container {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      max-width: 700px;
+      margin: 0 auto;
+    }
+
+    .step {
+      display: flex;
+      gap: 1.5rem;
+      align-items: flex-start;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.5rem;
+      transition: border-color 0.2s;
+    }
+
+    .step:hover { border-color: rgba(88,101,242,0.25); }
+
+    .step-num {
+      width: 40px;
+      height: 40px;
+      min-width: 40px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: 1rem;
+      box-shadow: 0 0 20px var(--glow);
+    }
+
+    .step-content h4 {
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      margin-bottom: 0.4rem;
+    }
+
+    .step-content p {
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+
+    .code-block {
+      margin-top: 0.6rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.6rem 1rem;
+      font-family: 'Courier New', monospace;
+      font-size: 0.85rem;
+      color: var(--accent2);
+    }
+
+    /* ---- CTA SECTION ---- */
+    #invite {
+      padding: 8rem 0;
+    }
+
+    .cta-box {
+      background: linear-gradient(135deg, rgba(88,101,242,0.15), rgba(114,137,218,0.08));
+      border: 1px solid rgba(88,101,242,0.2);
+      border-radius: 28px;
+      padding: clamp(3rem, 6vw, 5rem);
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .cta-box::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 500px;
+      height: 500px;
+      background: radial-gradient(ellipse, rgba(88,101,242,0.15), transparent 70%);
+      pointer-events: none;
+    }
+
+    .cta-box h2 {
+      font-family: 'Syne', sans-serif;
+      font-size: clamp(2rem, 4vw, 3.5rem);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      position: relative;
+    }
+
+    .cta-box p {
+      color: var(--muted);
+      margin-top: 1rem;
+      font-size: 1.05rem;
+      position: relative;
+    }
+
+    .cta-box .hero-cta {
+      margin-top: 2.5rem;
+      position: relative;
+    }
+
+    /* ---- FOOTER ---- */
+    footer {
+      position: relative;
+      z-index: 1;
+      border-top: 1px solid var(--border);
+      padding: 2rem clamp(1.5rem, 5vw, 4rem);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: gap;
+      gap: 1rem;
+    }
+
+    footer p {
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    footer a {
+      color: var(--accent2);
+      text-decoration: none;
+    }
+
+    /* ---- ANIMATIONS ---- */
+    @keyframes fadeDown {
+      from { opacity: 0; transform: translateY(-20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ---- SCROLLBAR ---- */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--surface2); border-radius: 3px; }
+
+    /* ---- RESPONSIVE ---- */
+    @media (max-width: 640px) {
+      .nav-links { display: none; }
+      .hero-stats { gap: 2rem; }
+      footer { flex-direction: column; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="mesh"></div>
+
+  <!-- NAV -->
+  <nav>
+    <a href="#" class="nav-brand">
+      <div class="nav-logo">🤖</div>
+      MonBot
+    </a>
+    <div class="nav-links">
+      <a href="#features">Fonctionnalités</a>
+      <a href="#commands">Commandes</a>
+      <a href="#setup">Installation</a>
+      <a href="https://discord.com/api/oauth2/authorize?client_id=VOTRE_CLIENT_ID&permissions=8&scope=bot" class="btn-invite-nav" target="_blank">Ajouter le bot</a>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="status-badge">
+      <span class="status-dot"></span>
+      Bot en ligne et opérationnel
+    </div>
+    <h1 class="hero-title">Le bot Discord<br><span>dont tu as besoin</span></h1>
+    <p class="hero-sub">Modération avancée, embeds personnalisés, messages de bienvenue, giveaways, logs… Tout-en-un, gratuit, et entièrement configurable.</p>
+    <div class="hero-cta">
+      <a href="https://discord.com/api/oauth2/authorize?client_id=VOTRE_CLIENT_ID&permissions=8&scope=bot" class="btn-primary" target="_blank">
+        ➕ Ajouter à mon serveur
+      </a>
+      <a href="#features" class="btn-secondary">
+        Voir les fonctionnalités →
+      </a>
+    </div>
+    <div class="hero-stats">
+      <div class="stat">
+        <div class="stat-num">50+</div>
+        <div class="stat-label">Commandes</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num">100%</div>
+        <div class="stat-label">Gratuit</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num">24/7</div>
+        <div class="stat-label">En ligne</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section id="features">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-tag">Fonctionnalités</div>
+        <h2 class="section-title">Tout ce dont tu as besoin</h2>
+        <p class="section-desc">Un bot complet pensé pour les grands serveurs comme les petites communautés.</p>
+      </div>
+      <div class="features-grid">
+
+        <div class="feature-card">
+          <div class="feature-icon" style="background:rgba(255,71,87,0.15)">🛡️</div>
+          <h3>Modération Complète</h3>
+          <p>Tous les outils pour garder ton serveur propre et sécurisé.</p>
+          <ul class="feature-list">
+            <li>Ban, Kick, Mute (avec durée)</li>
+            <li>Système d'avertissements + auto-sanctions</li>
+            <li>Suppression de messages en masse</li>
+            <li>Anti-liens & Anti-invitations Discord</li>
+            <li>Slowmode, Lock/Unlock salons</li>
+          </ul>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon" style="background:rgba(88,101,242,0.15)">🎨</div>
+          <h3>Embeds Personnalisables</h3>
+          <p>Crée des messages embed beaux et riches avec un éditeur interactif.</p>
+          <ul class="feature-list">
+            <li>Éditeur visuel avec boutons</li>
+            <li>Titre, description, couleur, image</li>
+            <li>Footer, miniature, auteur</li>
+            <li>Champs personnalisés (fields)</li>
+            <li>Envoi dans n'importe quel salon</li>
+          </ul>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon" style="background:rgba(87,242,135,0.15)">👋</div>
+          <h3>Bienvenue & Départ</h3>
+          <p>Accueille et dis au revoir à tes membres automatiquement.</p>
+          <ul class="feature-list">
+            <li>Message embed personnalisé</li>
+            <li>Variables dynamiques ({user}, {count}…)</li>
+            <li>Bannière & avatar du membre</li>
+            <li>Rôle automatique à l'arrivée</li>
+            <li>Message de départ</li>
+          </ul>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon" style="background:rgba(249,202,36,0.15)">📋</div>
+          <h3>Logs Avancés</h3>
+          <p>Surveille tout ce qui se passe sur ton serveur en temps réel.</p>
+          <ul class="feature-list">
+            <li>Messages supprimés / modifiés</li>
+            <li>Bans et expulsions</li>
+            <li>Actions de modération</li>
+            <li>Salon dédié configurable</li>
+          </ul>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon" style="background:rgba(255,165,2,0.15)">🎉</div>
+          <h3>Giveaways & Sondages</h3>
+          <p>Anime ta communauté avec des tirages et votes interactifs.</p>
+          <ul class="feature-list">
+            <li>Giveaways avec durée configurable</li>
+            <li>Plusieurs gagnants possibles</li>
+            <li>Sondages avec réactions</li>
+            <li>Fin automatique</li>
+          </ul>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon" style="background:rgba(114,137,218,0.15)">⚙️</div>
+          <h3>Config par Serveur</h3>
+          <p>Chaque serveur a sa propre configuration indépendante.</p>
+          <ul class="feature-list">
+            <li>Préfixe personnalisable</li>
+            <li>Renommer & changer l'avatar du bot</li>
+            <li>Config persistante (JSON)</li>
+            <li>Keepalive intégré pour Render</li>
+          </ul>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- COMMANDS -->
+  <section id="commands">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-tag">Commandes</div>
+        <h2 class="section-title">Plus de 50 commandes</h2>
+        <p class="section-desc">Préfixe par défaut : <code style="color:var(--accent2)">!</code> — modifiable par serveur.</p>
+      </div>
+
+      <div class="commands-tabs">
+        <button class="tab-btn active" onclick="showTab('mod')">🛡️ Modération</button>
+        <button class="tab-btn" onclick="showTab('embed')">🎨 Embeds</button>
+        <button class="tab-btn" onclick="showTab('fun')">🎉 Fun</button>
+        <button class="tab-btn" onclick="showTab('info')">ℹ️ Info</button>
+        <button class="tab-btn" onclick="showTab('config')">⚙️ Config</button>
+      </div>
+
+      <div id="tab-mod" class="commands-grid active">
+        <div class="cmd-card"><span class="cmd-name">!ban &lt;@user&gt; [raison]</span><p class="cmd-desc">Bannir un utilisateur du serveur</p></div>
+        <div class="cmd-card"><span class="cmd-name">!unban &lt;id&gt;</span><p class="cmd-desc">Débannir un utilisateur par ID</p></div>
+        <div class="cmd-card"><span class="cmd-name">!kick &lt;@user&gt; [raison]</span><p class="cmd-desc">Expulser un utilisateur</p></div>
+        <div class="cmd-card"><span class="cmd-name">!mute &lt;@user&gt; &lt;durée&gt;</span><p class="cmd-desc">Rendre muet (ex: 10m, 1h, 1d)</p></div>
+        <div class="cmd-card"><span class="cmd-name">!unmute &lt;@user&gt;</span><p class="cmd-desc">Retirer le mute d'un utilisateur</p></div>
+        <div class="cmd-card"><span class="cmd-name">!warn &lt;@user&gt; [raison]</span><p class="cmd-desc">Avertir un utilisateur</p></div>
+        <div class="cmd-card"><span class="cmd-name">!warns &lt;@user&gt;</span><p class="cmd-desc">Voir tous les avertissements</p></div>
+        <div class="cmd-card"><span class="cmd-name">!clearwarns &lt;@user&gt;</span><p class="cmd-desc">Effacer les avertissements</p></div>
+        <div class="cmd-card"><span class="cmd-name">!clear &lt;1-100&gt;</span><p class="cmd-desc">Supprimer des messages en masse</p></div>
+        <div class="cmd-card"><span class="cmd-name">!slowmode &lt;secondes&gt;</span><p class="cmd-desc">Définir le slowmode du salon</p></div>
+        <div class="cmd-card"><span class="cmd-name">!lock</span><p class="cmd-desc">Verrouiller le salon actuel</p></div>
+        <div class="cmd-card"><span class="cmd-name">!unlock</span><p class="cmd-desc">Déverrouiller le salon</p></div>
+        <div class="cmd-card"><span class="cmd-name">!nick &lt;@user&gt; &lt;pseudo&gt;</span><p class="cmd-desc">Changer le surnom d'un membre</p></div>
+        <div class="cmd-card"><span class="cmd-name">!role &lt;@user&gt; &lt;@role&gt;</span><p class="cmd-desc">Donner ou retirer un rôle</p></div>
+      </div>
+
+      <div id="tab-embed" class="commands-grid">
+        <div class="cmd-card"><span class="cmd-name">!embed create</span><p class="cmd-desc">Ouvrir l'éditeur d'embed interactif</p></div>
+        <div class="cmd-card"><span class="cmd-name">!embed send &lt;#salon&gt;</span><p class="cmd-desc">Envoyer l'embed dans un salon</p></div>
+        <div class="cmd-card"><span class="cmd-name">!say &lt;texte&gt;</span><p class="cmd-desc">Faire parler le bot</p></div>
+        <div class="cmd-card"><span class="cmd-name">!announce &lt;#salon&gt; &lt;texte&gt;</span><p class="cmd-desc">Annonce officielle avec @everyone</p></div>
+      </div>
+
+      <div id="tab-fun" class="commands-grid">
+        <div class="cmd-card"><span class="cmd-name">!giveaway &lt;durée&gt; &lt;nb&gt; &lt;lot&gt;</span><p class="cmd-desc">Lancer un giveaway (ex: 1h 2 Nitro)</p></div>
+        <div class="cmd-card"><span class="cmd-name">!poll &lt;question&gt;</span><p class="cmd-desc">Créer un sondage avec réactions</p></div>
+      </div>
+
+      <div id="tab-info" class="commands-grid">
+        <div class="cmd-card"><span class="cmd-name">!userinfo [@user]</span><p class="cmd-desc">Informations sur un utilisateur</p></div>
+        <div class="cmd-card"><span class="cmd-name">!serverinfo</span><p class="cmd-desc">Informations sur le serveur</p></div>
+        <div class="cmd-card"><span class="cmd-name">!botinfo</span><p class="cmd-desc">Informations sur le bot</p></div>
+        <div class="cmd-card"><span class="cmd-name">!avatar [@user]</span><p class="cmd-desc">Voir l'avatar en grande taille</p></div>
+        <div class="cmd-card"><span class="cmd-name">!roles</span><p class="cmd-desc">Lister tous les rôles du serveur</p></div>
+        <div class="cmd-card"><span class="cmd-name">!ping</span><p class="cmd-desc">Latence du bot et de l'API</p></div>
+        <div class="cmd-card"><span class="cmd-name">!help</span><p class="cmd-desc">Menu d'aide complet</p></div>
+      </div>
+
+      <div id="tab-config" class="commands-grid">
+        <div class="cmd-card"><span class="cmd-name">!setwelcome &lt;#salon&gt;</span><p class="cmd-desc">Définir le salon de bienvenue</p></div>
+        <div class="cmd-card"><span class="cmd-name">!setleave &lt;#salon&gt;</span><p class="cmd-desc">Définir le salon de départ</p></div>
+        <div class="cmd-card"><span class="cmd-name">!setlogs &lt;#salon&gt;</span><p class="cmd-desc">Définir le salon des logs</p></div>
+        <div class="cmd-card"><span class="cmd-name">!setwelcomemsg &lt;message&gt;</span><p class="cmd-desc">Personnaliser le message de bienvenue</p></div>
+        <div class="cmd-card"><span class="cmd-name">!setauthorole &lt;@role&gt;</span><p class="cmd-desc">Rôle donné automatiquement</p></div>
+        <div class="cmd-card"><span class="cmd-name">!antilinks on/off</span><p class="cmd-desc">Activer/désactiver l'anti-liens</p></div>
+        <div class="cmd-card"><span class="cmd-name">!antiinvites on/off</span><p class="cmd-desc">Bloquer les invitations Discord</p></div>
+        <div class="cmd-card"><span class="cmd-name">!setprefix &lt;prefix&gt;</span><p class="cmd-desc">Changer le préfixe du bot</p></div>
+        <div class="cmd-card"><span class="cmd-name">!botname &lt;nom&gt;</span><p class="cmd-desc">Renommer le bot (2x/heure max)</p></div>
+        <div class="cmd-card"><span class="cmd-name">!botavatar &lt;url&gt;</span><p class="cmd-desc">Changer l'avatar du bot</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SETUP -->
+  <section id="setup">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-tag">Guide</div>
+        <h2 class="section-title">Prêt en 5 minutes</h2>
+        <p class="section-desc">Configure et héberge ton bot simplement.</p>
+      </div>
+
+      <div class="steps-container">
+
+        <div class="step">
+          <div class="step-num">1</div>
+          <div class="step-content">
+            <h4>Créer l'application Discord</h4>
+            <p>Va sur <a href="https://discord.com/developers/applications" style="color:var(--accent2)" target="_blank">discord.com/developers</a>, crée une application, puis dans "Bot" active les <strong>Privileged Intents</strong> (Server Members, Message Content, Presence).</p>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-num">2</div>
+          <div class="step-content">
+            <h4>Configurer le bot</h4>
+            <p>Copie ton token dans <code style="color:var(--accent2)">config.json</code> et ton Client ID dans le lien d'invitation.</p>
+            <div class="code-block">token: "TON_TOKEN_BOT"</div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-num">3</div>
+          <div class="step-content">
+            <h4>Installer et lancer</h4>
+            <p>Installe les dépendances puis démarre le bot :</p>
+            <div class="code-block">npm install && npm start</div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-num">4</div>
+          <div class="step-content">
+            <h4>Héberger sur Render (24/7)</h4>
+            <p>Dépose le code sur GitHub, crée un "Web Service" sur <a href="https://render.com" style="color:var(--accent2)" target="_blank">render.com</a>. Le keepalive intégré maintient le bot actif <strong>sans Uptime Robot</strong> !</p>
+            <div class="code-block">Build: npm install | Start: node bot.js</div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-num">5</div>
+          <div class="step-content">
+            <h4>Configurer sur ton serveur</h4>
+            <p>Invite le bot, puis utilise <code style="color:var(--accent2)">!setwelcome #salon</code>, <code style="color:var(--accent2)">!setlogs #salon</code> et <code style="color:var(--accent2)">!setauthorole @role</code> pour tout configurer !</p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section id="invite">
+    <div class="container">
+      <div class="cta-box">
+        <h2>Prêt à booster ton serveur ? 🚀</h2>
+        <p>Ajoute le bot en un clic et commence à utiliser toutes ses fonctionnalités.</p>
+        <div class="hero-cta">
+          <a href="https://discord.com/api/oauth2/authorize?client_id=VOTRE_CLIENT_ID&permissions=8&scope=bot" class="btn-primary" target="_blank">
+            ➕ Ajouter à Discord
+          </a>
+          <a href="#commands" class="btn-secondary">
+            📋 Voir les commandes
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <p>© 2025 <strong>MonBot</strong> — Bot Discord fait avec ❤️</p>
+    <p><a href="https://discord.com/developers/applications" target="_blank">Portail développeurs</a> • <a href="https://render.com" target="_blank">Héberger sur Render</a></p>
+  </footer>
+
+  <script>
+    function showTab(tab) {
+      document.querySelectorAll('.commands-grid').forEach(g => g.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('tab-' + tab).classList.add('active');
+      event.target.classList.add('active');
+    }
+
+    // Smooth scroll for nav links
+    document.querySelectorAll('a[href^="#"]').forEach(a => {
+      a.addEventListener('click', e => {
+        const target = document.querySelector(a.getAttribute('href'));
+        if (target) {
+          e.preventDefault();
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+    });
+
+    // Intersection observer for card animations
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          e.target.style.opacity = '1';
+          e.target.style.transform = 'translateY(0)';
+        }
+      });
+    }, { threshold: 0.1 });
+
+    document.querySelectorAll('.feature-card, .step, .cmd-card').forEach(el => {
+      el.style.opacity = '0';
+      el.style.transform = 'translateY(20px)';
+      el.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+      observer.observe(el);
+    });
+  </script>
+</body>
+</html>
