@@ -2,7 +2,22 @@ const { Client, GatewayIntentBits, Partials, EmbedBuilder, PermissionsBitField, 
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
-const config = require('./config.json');
+// ========================
+// CONFIGURATION VIA ENV
+// ========================
+const config = {
+  token: process.env.TOKEN,
+  prefix: process.env.PREFIX || '!',
+  botName: process.env.BOT_NAME || 'MonBot',
+  embedColor: process.env.EMBED_COLOR || '#5865F2',
+  // Tu peux ajouter d'autres variables ici plus tard
+};
+
+// Vérification de sécurité (très recommandé)
+if (!config.token) {
+  console.error('❌ ERREUR : Le token Discord n\'est pas défini dans les variables d\'environnement !');
+  process.exit(1); // Arrête le bot proprement
+}
 
 // ========================
 // KEEPALIVE SERVER (Render)
