@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Partials, EmbedBuilder, PermissionsBitField, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder, AttachmentBuilder, Collection } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, EmbedBuilder, PermissionsBitField, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder, AttachmentBuilder, Collection, MessageFlags } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
@@ -22,7 +22,6 @@ function isOwner(userId) {
   return userId === OWNER_ID;
 }
 
-// Middleware de vérification owner
 function checkOwner(message) {
   if (!isOwner(message.author.id)) {
     message.reply('❌ Seul **stiroxbereal** peut utiliser les commandes de ce bot.');
@@ -42,7 +41,21 @@ if (!config.token) {
 const app = express();
 app.get('/', (req, res) => res.send('✅ Bot Discord en ligne !'));
 app.get('/health', (req, res) => res.json({ status: 'alive', bot: config.botName, uptime: process.uptime() }));
-app.listen(3000, () => console.log('🌐 Serveur keepalive actif sur le port 3000'));
+app.listen(3000, () => {
+  console.log('🌐 Serveur keepalive actif sur le port 3000');
+
+  // Self-ping toutes les 14 minutes pour éviter la mise en veille de Render
+  const RENDER_URL = process.env.RENDER_EXTERNAL_URL;
+  if (RENDER_URL) {
+    setInterval(() => {
+      fetch(`${RENDER_URL}/health`)
+        .then(() => console.log('♻️ Self-ping OK'))
+        .catch(err => console.error('⚠️ Self-ping échoué:', err.message));
+    }, 14 * 60 * 1000);
+  } else {
+    console.warn('⚠️ RENDER_EXTERNAL_URL non défini — self-ping désactivé.');
+  }
+});
 
 // ========================
 // CLIENT DISCORD
@@ -160,7 +173,7 @@ client.on('messageCreate', async (message) => {
   const data = loadData();
   const guildConfig = data.configs[message.guild.id] || {};
 
-  // Anti-spam / Anti-liens
+  // Anti-liens
   if (guildConfig.antiLinks && !message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
     const linkRegex = /(https?:\/\/|discord\.gg\/|www\.)/gi;
     if (linkRegex.test(message.content)) {
@@ -184,15 +197,9 @@ client.on('messageCreate', async (message) => {
   const args = message.content.slice(prefix.length).trim().split(/ +/);
   const commandName = args.shift().toLowerCase();
 
-  // ========================
-  // VÉRIFICATION OWNER
-  // Toutes les commandes sont réservées à stiroxbereal
-  // ========================
+  // Toutes les commandes réservées à stiroxbereal
   if (!checkOwner(message)) return;
 
-  // ========================
-  // COMMANDES
-  // ========================
   switch (commandName) {
 
     // ===== AIDE =====
@@ -414,8 +421,6 @@ client.on('messageCreate', async (message) => {
     }
 
     // ===== MUTE USER SALON =====
-    // Usage: !muteusersalon <@user> [#salon]
-    // Si aucun salon mentionné, s'applique au salon courant
     case 'muteusersalon': {
       if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels))
         return message.reply('❌ Permission refusée.');
@@ -423,10 +428,7 @@ client.on('messageCreate', async (message) => {
       const target = message.mentions.members.first();
       if (!target) return message.reply('❌ Mentionne un utilisateur. Usage : `!muteusersalon <@user> [#salon]`');
 
-      // Salon mentionné ou salon courant
       const targetChannel = message.mentions.channels.first() || message.channel;
-
-      // Vérifier que c'est bien un salon texte
       if (!targetChannel.isTextBased()) return message.reply('❌ Le salon cible doit être un salon textuel.');
 
       try {
@@ -459,7 +461,6 @@ client.on('messageCreate', async (message) => {
     }
 
     // ===== UNMUTE USER SALON =====
-    // Usage: !unmuteusersalon <@user> [#salon]
     case 'unmuteusersalon': {
       if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels))
         return message.reply('❌ Permission refusée.');
@@ -468,12 +469,9 @@ client.on('messageCreate', async (message) => {
       if (!target) return message.reply('❌ Mentionne un utilisateur. Usage : `!unmuteusersalon <@user> [#salon]`');
 
       const targetChannel = message.mentions.channels.first() || message.channel;
-
       if (!targetChannel.isTextBased()) return message.reply('❌ Le salon cible doit être un salon textuel.');
 
       try {
-        // Supprimer les overrides spécifiques à cet utilisateur pour ces permissions
-        // null = revenir aux permissions héritées du rôle
         await targetChannel.permissionOverwrites.edit(target, {
           SendMessages: null,
           AddReactions: null,
@@ -882,7 +880,6 @@ client.on('messageCreate', async (message) => {
       if (!newName) return message.reply('❌ Fournis un nom.');
       await client.user.setUsername(newName).catch(() => message.reply('❌ Impossible (limite Discord: 2x/heure)'));
       config.botName = newName;
-      fs.writeFileSync('./config.json', JSON.stringify(config, null, 2));
       return message.reply(`✅ Nom du bot changé en **${newName}**`);
     }
 
@@ -977,10 +974,9 @@ client.on('messageCreate', async (message) => {
 // BUTTON INTERACTIONS
 // ========================
 client.on('interactionCreate', async (interaction) => {
-  // Vérification owner sur les interactions aussi
   if (!isOwner(interaction.user.id)) {
     if (interaction.isRepliable()) {
-      return interaction.reply({ content: '❌ Seul **stiroxbereal** peut interagir avec ce bot.', ephemeral: true });
+      return interaction.reply({ content: '❌ Seul **stiroxbereal** peut interagir avec ce bot.', flags: MessageFlags.Ephemeral });
     }
     return;
   }
@@ -1003,7 +999,7 @@ client.on('interactionCreate', async (interaction) => {
             { name: '`!muteusersalon <@user> [#salon]`', value: 'Mute salon', inline: true },
             { name: '`!unmuteusersalon <@user> [#salon]`', value: 'Unmute salon', inline: true },
           )],
-        ephemeral: true
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -1018,7 +1014,7 @@ client.on('interactionCreate', async (interaction) => {
             { name: '`!say <texte>`', value: 'Parler', inline: true },
             { name: '`!announce <#salon> <texte>`', value: 'Annonce', inline: true },
           )],
-        ephemeral: true
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -1035,7 +1031,7 @@ client.on('interactionCreate', async (interaction) => {
             { name: '`!botname <nom>`', value: 'Renommer bot', inline: true },
             { name: '`!botavatar <url>`', value: 'Changer avatar', inline: true },
           )],
-        ephemeral: true
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -1051,7 +1047,7 @@ client.on('interactionCreate', async (interaction) => {
             { name: '`!avatar [@user]`', value: 'Avatar', inline: true },
             { name: '`!ping`', value: 'Latence', inline: true },
           )],
-        ephemeral: true
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -1117,7 +1113,7 @@ function buildEmbed(draft) {
 async function handleEmbedBuilder(interaction, data) {
   const userId = interaction.user.id;
   if (!data.embedDrafts?.[userId]) {
-    return interaction.reply({ content: '❌ Aucun embed en cours.', ephemeral: true });
+    return interaction.reply({ content: '❌ Aucun embed en cours.', flags: MessageFlags.Ephemeral });
   }
 
   const action = interaction.customId.replace('embed_', '');
@@ -1194,7 +1190,7 @@ async function handleModalSubmit(interaction) {
     await interaction.reply({
       content: `✅ **${action}** mis à jour ! Aperçu :`,
       embeds: [preview],
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 }
