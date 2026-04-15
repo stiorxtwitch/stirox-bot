@@ -16,7 +16,7 @@ const config = {
 // ========================
 // OWNER ONLY (stiroxbereal)
 // ========================
-const OWNER_ID = '771440807919878164', '1104345058712506368', '1369002835609518231';
+const OWNER_ID = '771440807919878164';
 
 function isOwner(userId) {
   return userId === OWNER_ID;
