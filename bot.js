@@ -2,6 +2,7 @@ const { Client, GatewayIntentBits, Partials, EmbedBuilder, PermissionsBitField, 
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
+
 // ========================
 // CONFIGURATION VIA ENV
 // ========================
@@ -10,13 +11,29 @@ const config = {
   prefix: process.env.PREFIX || '!',
   botName: process.env.BOT_NAME || 'MonBot',
   embedColor: process.env.EMBED_COLOR || '#5865F2',
-  // Tu peux ajouter d'autres variables ici plus tard
 };
 
-// Vérification de sécurité (très recommandé)
+// ========================
+// OWNER ONLY (stiroxbereal)
+// ========================
+const OWNER_ID = '771440807919878164';
+
+function isOwner(userId) {
+  return userId === OWNER_ID;
+}
+
+// Middleware de vérification owner
+function checkOwner(message) {
+  if (!isOwner(message.author.id)) {
+    message.reply('❌ Seul **stiroxbereal** peut utiliser les commandes de ce bot.');
+    return false;
+  }
+  return true;
+}
+
 if (!config.token) {
   console.error('❌ ERREUR : Le token Discord n\'est pas défini dans les variables d\'environnement !');
-  process.exit(1); // Arrête le bot proprement
+  process.exit(1);
 }
 
 // ========================
@@ -65,8 +82,8 @@ function saveData(data) {
 client.once('ready', async () => {
   console.log(`✅ ${client.user.tag} est en ligne !`);
   console.log(`📡 Connecté à ${client.guilds.cache.size} serveur(s)`);
-  
-  // Statut rotatif
+  console.log(`🔒 Accès restreint à l'utilisateur ID: ${OWNER_ID} (stiroxbereal)`);
+
   const statuses = [
     { name: `${config.prefix}help | ${config.botName}`, type: 0 },
     { name: `Surveiller le serveur 🔒`, type: 3 },
@@ -107,7 +124,6 @@ client.on('guildMemberAdd', async (member) => {
 
   await channel.send({ content: `<@${member.id}>`, embeds: [embed] });
 
-  // Rôle auto
   if (guildConfig.autorole) {
     const role = member.guild.roles.cache.get(guildConfig.autorole);
     if (role) member.roles.add(role).catch(() => {});
@@ -169,6 +185,12 @@ client.on('messageCreate', async (message) => {
   const commandName = args.shift().toLowerCase();
 
   // ========================
+  // VÉRIFICATION OWNER
+  // Toutes les commandes sont réservées à stiroxbereal
+  // ========================
+  if (!checkOwner(message)) return;
+
+  // ========================
   // COMMANDES
   // ========================
   switch (commandName) {
@@ -176,7 +198,7 @@ client.on('messageCreate', async (message) => {
     // ===== AIDE =====
     case 'help': {
       const cat = args[0]?.toLowerCase();
-      
+
       if (cat === 'moderation' || cat === 'mod') {
         const embed = new EmbedBuilder()
           .setTitle('🛡️ Commandes de Modération')
@@ -196,6 +218,8 @@ client.on('messageCreate', async (message) => {
             { name: '`!unlock`', value: 'Déverrouiller le salon', inline: true },
             { name: '`!nick <@user> <pseudo>`', value: 'Changer le pseudo', inline: true },
             { name: '`!role <@user> <@role>`', value: 'Donner/retirer un rôle', inline: true },
+            { name: '`!muteusersalon <@user> [#salon]`', value: 'Couper les messages d\'un user dans un salon', inline: true },
+            { name: '`!unmuteusersalon <@user> [#salon]`', value: 'Rétablir les messages d\'un user dans un salon', inline: true },
           )
           .setFooter({ text: `${config.botName} • Modération` });
         return message.reply({ embeds: [embed] });
@@ -357,14 +381,14 @@ client.on('messageCreate', async (message) => {
         return message.reply('❌ Permission refusée.');
       const target = message.mentions.members.first();
       if (!target) return message.reply('❌ Mentionne un utilisateur.');
-      
+
       let duration = args[1];
       let ms = parseDuration(duration);
       if (!ms) { ms = 10 * 60 * 1000; duration = '10m'; }
-      
+
       const reason = args.slice(2).join(' ') || 'Aucune raison fournie';
       await target.timeout(ms, reason);
-      
+
       const embed = new EmbedBuilder()
         .setTitle('🔇 Utilisateur muet')
         .addFields(
@@ -389,6 +413,95 @@ client.on('messageCreate', async (message) => {
       return message.reply(`✅ **${target.user.username}** n'est plus muet.`);
     }
 
+    // ===== MUTE USER SALON =====
+    // Usage: !muteusersalon <@user> [#salon]
+    // Si aucun salon mentionné, s'applique au salon courant
+    case 'muteusersalon': {
+      if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels))
+        return message.reply('❌ Permission refusée.');
+
+      const target = message.mentions.members.first();
+      if (!target) return message.reply('❌ Mentionne un utilisateur. Usage : `!muteusersalon <@user> [#salon]`');
+
+      // Salon mentionné ou salon courant
+      const targetChannel = message.mentions.channels.first() || message.channel;
+
+      // Vérifier que c'est bien un salon texte
+      if (!targetChannel.isTextBased()) return message.reply('❌ Le salon cible doit être un salon textuel.');
+
+      try {
+        await targetChannel.permissionOverwrites.edit(target, {
+          SendMessages: false,
+          AddReactions: false,
+          CreatePublicThreads: false,
+          CreatePrivateThreads: false,
+          SendMessagesInThreads: false,
+        });
+
+        const embed = new EmbedBuilder()
+          .setTitle('🔇 Mute Salon')
+          .setDescription(`**${target.user.username}** ne peut plus envoyer de messages dans ${targetChannel}.`)
+          .addFields(
+            { name: 'Utilisateur', value: target.user.tag, inline: true },
+            { name: 'Salon', value: targetChannel.toString(), inline: true },
+            { name: 'Modérateur', value: message.author.tag, inline: true },
+          )
+          .setColor('#747D8C')
+          .setThumbnail(target.user.displayAvatarURL())
+          .setTimestamp();
+
+        await logAction(message.guild, embed, data);
+        return message.reply({ embeds: [embed] });
+      } catch (err) {
+        console.error(err);
+        return message.reply('❌ Impossible de modifier les permissions. Vérifie que le bot a la permission **Gérer les salons**.');
+      }
+    }
+
+    // ===== UNMUTE USER SALON =====
+    // Usage: !unmuteusersalon <@user> [#salon]
+    case 'unmuteusersalon': {
+      if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels))
+        return message.reply('❌ Permission refusée.');
+
+      const target = message.mentions.members.first();
+      if (!target) return message.reply('❌ Mentionne un utilisateur. Usage : `!unmuteusersalon <@user> [#salon]`');
+
+      const targetChannel = message.mentions.channels.first() || message.channel;
+
+      if (!targetChannel.isTextBased()) return message.reply('❌ Le salon cible doit être un salon textuel.');
+
+      try {
+        // Supprimer les overrides spécifiques à cet utilisateur pour ces permissions
+        // null = revenir aux permissions héritées du rôle
+        await targetChannel.permissionOverwrites.edit(target, {
+          SendMessages: null,
+          AddReactions: null,
+          CreatePublicThreads: null,
+          CreatePrivateThreads: null,
+          SendMessagesInThreads: null,
+        });
+
+        const embed = new EmbedBuilder()
+          .setTitle('🔊 Unmute Salon')
+          .setDescription(`**${target.user.username}** peut de nouveau envoyer des messages dans ${targetChannel}.`)
+          .addFields(
+            { name: 'Utilisateur', value: target.user.tag, inline: true },
+            { name: 'Salon', value: targetChannel.toString(), inline: true },
+            { name: 'Modérateur', value: message.author.tag, inline: true },
+          )
+          .setColor('#2ED573')
+          .setThumbnail(target.user.displayAvatarURL())
+          .setTimestamp();
+
+        await logAction(message.guild, embed, data);
+        return message.reply({ embeds: [embed] });
+      } catch (err) {
+        console.error(err);
+        return message.reply('❌ Impossible de modifier les permissions. Vérifie que le bot a la permission **Gérer les salons**.');
+      }
+    }
+
     // ===== WARN =====
     case 'warn': {
       if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers))
@@ -396,15 +509,15 @@ client.on('messageCreate', async (message) => {
       const target = message.mentions.members.first();
       if (!target) return message.reply('❌ Mentionne un utilisateur.');
       const reason = args.slice(1).join(' ') || 'Aucune raison fournie';
-      
+
       if (!data.warns[message.guild.id]) data.warns[message.guild.id] = {};
       if (!data.warns[message.guild.id][target.id]) data.warns[message.guild.id][target.id] = [];
-      
+
       data.warns[message.guild.id][target.id].push({
         reason, moderator: message.author.tag, date: new Date().toISOString()
       });
       saveData(data);
-      
+
       const warnCount = data.warns[message.guild.id][target.id].length;
       const embed = new EmbedBuilder()
         .setTitle('⚠️ Avertissement')
@@ -417,11 +530,10 @@ client.on('messageCreate', async (message) => {
         .setColor('#ECCC68')
         .setTimestamp();
       await logAction(message.guild, embed, data);
-      
-      // Auto-sanctions
+
       if (warnCount >= 5) await target.ban({ reason: 'Auto-ban: 5 avertissements' }).catch(() => {});
       else if (warnCount >= 3) await target.timeout(3600000, 'Auto-mute: 3 avertissements').catch(() => {});
-      
+
       return message.reply({ embeds: [embed] });
     }
 
@@ -429,7 +541,7 @@ client.on('messageCreate', async (message) => {
     case 'warns': {
       const target = message.mentions.members.first() || message.member;
       const guildWarns = data.warns[message.guild.id]?.[target.id] || [];
-      
+
       const embed = new EmbedBuilder()
         .setTitle(`📋 Avertissements de ${target.user.username}`)
         .setDescription(guildWarns.length === 0 ? 'Aucun avertissement' : guildWarns.map((w, i) => `**${i + 1}.** ${w.reason} — par ${w.moderator}`).join('\n'))
@@ -628,14 +740,14 @@ client.on('messageCreate', async (message) => {
       if (!channel) return message.reply('❌ Mentionne un salon.');
       const text = args.slice(1).join(' ');
       if (!text) return message.reply('❌ Fournis un texte.');
-      
+
       const embed = new EmbedBuilder()
         .setTitle('📢 Annonce')
         .setDescription(text)
         .setColor(config.embedColor)
         .setFooter({ text: `Annonce par ${message.author.username}`, iconURL: message.author.displayAvatarURL() })
         .setTimestamp();
-      
+
       await channel.send({ content: '@everyone', embeds: [embed] });
       return message.reply(`✅ Annonce envoyée dans ${channel}.`);
     }
@@ -644,11 +756,10 @@ client.on('messageCreate', async (message) => {
     case 'embed': {
       if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages))
         return message.reply('❌ Permission refusée.');
-      
+
       const subCmd = args[0]?.toLowerCase();
-      
+
       if (!subCmd || subCmd === 'create') {
-        // Initialiser un draft
         if (!data.embedDrafts) data.embedDrafts = {};
         data.embedDrafts[message.author.id] = {
           title: 'Mon Embed',
@@ -660,21 +771,19 @@ client.on('messageCreate', async (message) => {
           fields: [],
         };
         saveData(data);
-        
         return sendEmbedBuilder(message, data.embedDrafts[message.author.id]);
       }
-      
+
       if (subCmd === 'send') {
         const channel = message.mentions.channels.first();
         if (!channel) return message.reply('❌ Mentionne un salon.');
         const draft = data.embedDrafts?.[message.author.id];
         if (!draft) return message.reply('❌ Aucun embed en cours. Utilise `!embed create`.');
-        
         const embed = buildEmbed(draft);
         await channel.send({ embeds: [embed] });
         return message.reply(`✅ Embed envoyé dans ${channel} !`);
       }
-      
+
       break;
     }
 
@@ -795,45 +904,45 @@ client.on('messageCreate', async (message) => {
       const winners = parseInt(args[1]) || 1;
       const prize = args.slice(2).join(' ');
       if (!duration || !prize) return message.reply('❌ Usage: `!giveaway <durée> <gagnants> <lot>` ex: `!giveaway 1h 1 Nitro`');
-      
+
       const ms = parseDuration(duration);
       if (!ms) return message.reply('❌ Durée invalide. Ex: 10m, 1h, 1d');
-      
+
       const endTime = Math.floor((Date.now() + ms) / 1000);
-      
+
       const embed = new EmbedBuilder()
         .setTitle('🎉 GIVEAWAY 🎉')
         .setDescription(`**Lot:** ${prize}\n\n📅 Fin: <t:${endTime}:R>\n👥 Gagnant(s): ${winners}\n\n**Réagis avec 🎉 pour participer !**`)
         .setColor('#F9CA24')
         .setFooter({ text: `Organisé par ${message.author.username} • Fin dans ${duration}` })
         .setTimestamp(Date.now() + ms);
-      
+
       const msg = await message.channel.send({ embeds: [embed] });
       await msg.react('🎉');
-      
+
       setTimeout(async () => {
         const refreshed = await msg.fetch();
         const reaction = refreshed.reactions.cache.get('🎉');
         const users = await reaction.users.fetch();
         const participants = users.filter(u => !u.bot);
-        
+
         if (participants.size === 0) {
           return msg.reply('❌ Pas de participants, le giveaway est annulé.');
         }
-        
+
         const winnersList = participants.random(Math.min(winners, participants.size));
         const winnersText = Array.isArray(winnersList) ? winnersList.map(u => u.toString()).join(', ') : winnersList.toString();
-        
+
         const endEmbed = new EmbedBuilder()
           .setTitle('🎉 GIVEAWAY TERMINÉ')
           .setDescription(`**Lot:** ${prize}\n\n🏆 **Gagnant(s):** ${winnersText}`)
           .setColor('#27AE60')
           .setTimestamp();
-        
+
         await msg.edit({ embeds: [endEmbed] });
         await msg.reply(`🎉 Félicitations ${winnersText} ! Vous avez gagné **${prize}** !`);
       }, ms);
-      
+
       break;
     }
 
@@ -843,14 +952,14 @@ client.on('messageCreate', async (message) => {
         return message.reply('❌ Permission refusée.');
       const question = args.join(' ');
       if (!question) return message.reply('❌ Fournis une question.');
-      
+
       const embed = new EmbedBuilder()
         .setTitle('📊 Sondage')
         .setDescription(question)
         .setColor(config.embedColor)
         .setFooter({ text: `Sondage par ${message.author.username}` })
         .setTimestamp();
-      
+
       const msg = await message.channel.send({ embeds: [embed] });
       await msg.react('👍');
       await msg.react('👎');
@@ -868,9 +977,17 @@ client.on('messageCreate', async (message) => {
 // BUTTON INTERACTIONS
 // ========================
 client.on('interactionCreate', async (interaction) => {
+  // Vérification owner sur les interactions aussi
+  if (!isOwner(interaction.user.id)) {
+    if (interaction.isRepliable()) {
+      return interaction.reply({ content: '❌ Seul **stiroxbereal** peut interagir avec ce bot.', ephemeral: true });
+    }
+    return;
+  }
+
   if (interaction.isButton()) {
     const data = loadData();
-    
+
     if (interaction.customId === 'help_mod') {
       await interaction.reply({
         embeds: [new EmbedBuilder()
@@ -883,11 +1000,13 @@ client.on('interactionCreate', async (interaction) => {
             { name: '`!warn <@user> [raison]`', value: 'Avertir', inline: true },
             { name: '`!clear <nombre>`', value: 'Supprimer messages', inline: true },
             { name: '`!lock / !unlock`', value: 'Verrouiller salon', inline: true },
+            { name: '`!muteusersalon <@user> [#salon]`', value: 'Mute salon', inline: true },
+            { name: '`!unmuteusersalon <@user> [#salon]`', value: 'Unmute salon', inline: true },
           )],
         ephemeral: true
       });
     }
-    
+
     if (interaction.customId === 'help_embed') {
       await interaction.reply({
         embeds: [new EmbedBuilder()
@@ -902,7 +1021,7 @@ client.on('interactionCreate', async (interaction) => {
         ephemeral: true
       });
     }
-    
+
     if (interaction.customId === 'help_config') {
       await interaction.reply({
         embeds: [new EmbedBuilder()
@@ -919,7 +1038,7 @@ client.on('interactionCreate', async (interaction) => {
         ephemeral: true
       });
     }
-    
+
     if (interaction.customId === 'help_info') {
       await interaction.reply({
         embeds: [new EmbedBuilder()
@@ -935,17 +1054,16 @@ client.on('interactionCreate', async (interaction) => {
         ephemeral: true
       });
     }
-    
-    // Embed builder buttons
+
     if (interaction.customId.startsWith('embed_')) {
       await handleEmbedBuilder(interaction, data);
     }
   }
-  
+
   if (interaction.isModalSubmit()) {
     await handleModalSubmit(interaction);
   }
-  
+
   if (interaction.isStringSelectMenu()) {
     await handleSelectMenu(interaction);
   }
@@ -956,14 +1074,14 @@ client.on('interactionCreate', async (interaction) => {
 // ========================
 async function sendEmbedBuilder(message, draft) {
   const preview = buildEmbed(draft);
-  
+
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('embed_title').setLabel('Titre').setStyle(ButtonStyle.Primary).setEmoji('✏️'),
     new ButtonBuilder().setCustomId('embed_description').setLabel('Description').setStyle(ButtonStyle.Primary).setEmoji('📝'),
     new ButtonBuilder().setCustomId('embed_color').setLabel('Couleur').setStyle(ButtonStyle.Primary).setEmoji('🎨'),
     new ButtonBuilder().setCustomId('embed_footer').setLabel('Footer').setStyle(ButtonStyle.Primary).setEmoji('📋'),
   );
-  
+
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('embed_image').setLabel('Image').setStyle(ButtonStyle.Secondary).setEmoji('🖼️'),
     new ButtonBuilder().setCustomId('embed_thumbnail').setLabel('Miniature').setStyle(ButtonStyle.Secondary).setEmoji('📸'),
@@ -983,7 +1101,7 @@ function buildEmbed(draft) {
     .setTitle(draft.title || null)
     .setDescription(draft.description || null)
     .setColor(draft.color || '#5865F2');
-  
+
   if (draft.footer) embed.setFooter({ text: draft.footer });
   if (draft.image) embed.setImage(draft.image);
   if (draft.thumbnail) embed.setThumbnail(draft.thumbnail);
@@ -992,7 +1110,7 @@ function buildEmbed(draft) {
   if (draft.fields?.length) {
     draft.fields.forEach(f => embed.addFields({ name: f.name, value: f.value, inline: f.inline || false }));
   }
-  
+
   return embed;
 }
 
@@ -1001,9 +1119,9 @@ async function handleEmbedBuilder(interaction, data) {
   if (!data.embedDrafts?.[userId]) {
     return interaction.reply({ content: '❌ Aucun embed en cours.', ephemeral: true });
   }
-  
+
   const action = interaction.customId.replace('embed_', '');
-  
+
   const modals = {
     title: { label: 'Titre de l\'embed', placeholder: 'Mon super titre', max: 256 },
     description: { label: 'Description', placeholder: 'Description de l\'embed...', max: 4000, style: TextInputStyle.Paragraph },
@@ -1014,14 +1132,14 @@ async function handleEmbedBuilder(interaction, data) {
     author: { label: 'Nom de l\'auteur', placeholder: 'Auteur', max: 256 },
     addfield: { label: 'Nom du champ', placeholder: 'Titre du champ', max: 256 },
   };
-  
+
   const modalConfig = modals[action];
   if (!modalConfig) return;
-  
+
   const modal = new ModalBuilder()
     .setCustomId(`embedmodal_${action}`)
     .setTitle(`Modifier: ${action}`);
-  
+
   const input = new TextInputBuilder()
     .setCustomId('input_value')
     .setLabel(modalConfig.label)
@@ -1029,7 +1147,7 @@ async function handleEmbedBuilder(interaction, data) {
     .setPlaceholder(modalConfig.placeholder)
     .setMaxLength(modalConfig.max)
     .setRequired(true);
-  
+
   if (action === 'addfield') {
     const valueInput = new TextInputBuilder()
       .setCustomId('field_value')
@@ -1037,7 +1155,7 @@ async function handleEmbedBuilder(interaction, data) {
       .setStyle(TextInputStyle.Paragraph)
       .setMaxLength(1024)
       .setRequired(true);
-    
+
     modal.addComponents(
       new ActionRowBuilder().addComponents(input),
       new ActionRowBuilder().addComponents(valueInput),
@@ -1045,21 +1163,21 @@ async function handleEmbedBuilder(interaction, data) {
   } else {
     modal.addComponents(new ActionRowBuilder().addComponents(input));
   }
-  
+
   await interaction.showModal(modal);
 }
 
 async function handleModalSubmit(interaction) {
   const data = loadData();
   const userId = interaction.user.id;
-  
+
   if (interaction.customId.startsWith('embedmodal_')) {
     const action = interaction.customId.replace('embedmodal_', '');
     const value = interaction.fields.getTextInputValue('input_value');
-    
+
     if (!data.embedDrafts) data.embedDrafts = {};
     if (!data.embedDrafts[userId]) data.embedDrafts[userId] = {};
-    
+
     if (action === 'addfield') {
       const fieldValue = interaction.fields.getTextInputValue('field_value');
       if (!data.embedDrafts[userId].fields) data.embedDrafts[userId].fields = [];
@@ -1069,10 +1187,10 @@ async function handleModalSubmit(interaction) {
     } else {
       data.embedDrafts[userId][action] = value;
     }
-    
+
     saveData(data);
     const preview = buildEmbed(data.embedDrafts[userId]);
-    
+
     await interaction.reply({
       content: `✅ **${action}** mis à jour ! Aperçu :`,
       embeds: [preview],
