@@ -44,7 +44,6 @@ app.get('/health', (req, res) => res.json({ status: 'alive', bot: config.botName
 app.listen(3000, () => {
   console.log('🌐 Serveur keepalive actif sur le port 3000');
 
-  // Self-ping toutes les 14 minutes pour éviter la mise en veille de Render
   const RENDER_URL = process.env.RENDER_EXTERNAL_URL;
   if (RENDER_URL) {
     setInterval(() => {
@@ -227,6 +226,7 @@ client.on('messageCreate', async (message) => {
             { name: '`!role <@user> <@role>`', value: 'Donner/retirer un rôle', inline: true },
             { name: '`!muteusersalon <@user> [#salon]`', value: 'Couper les messages d\'un user dans un salon', inline: true },
             { name: '`!unmuteusersalon <@user> [#salon]`', value: 'Rétablir les messages d\'un user dans un salon', inline: true },
+            { name: '`!transcript [#salon]`', value: 'Transcript d\'un salon en .txt (DM)', inline: true },
           )
           .setFooter({ text: `${config.botName} • Modération` });
         return message.reply({ embeds: [embed] });
@@ -965,6 +965,159 @@ client.on('messageCreate', async (message) => {
       break;
     }
 
+    // ===== TRANSCRIPT =====
+    case 'transcript': {
+      if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages))
+        return message.reply('❌ Permission refusée.');
+
+      const targetChannel = message.mentions.channels.first() || message.channel;
+      if (!targetChannel.isTextBased())
+        return message.reply('❌ Le salon cible doit être un salon textuel.');
+
+      const loadingMsg = await message.reply(`⏳ Génération du transcript de ${targetChannel} en cours...`);
+
+      try {
+        // Fetch jusqu'à 500 messages (limite API Discord = 100 par requête)
+        let allMessages = [];
+        let lastId = null;
+
+        for (let i = 0; i < 5; i++) {
+          const options = { limit: 100 };
+          if (lastId) options.before = lastId;
+
+          const batch = await targetChannel.messages.fetch(options);
+          if (batch.size === 0) break;
+
+          allMessages = allMessages.concat([...batch.values()]);
+          lastId = batch.last().id;
+        }
+
+        // Tri chronologique (du plus ancien au plus récent)
+        allMessages.reverse();
+
+        if (allMessages.length === 0) {
+          await loadingMsg.delete().catch(() => {});
+          return message.reply('❌ Aucun message trouvé dans ce salon.');
+        }
+
+        // Génération du fichier texte
+        const separator = '═'.repeat(50);
+        const lines = [
+          separator,
+          `  📄 TRANSCRIPT — #${targetChannel.name}`,
+          `  🏠 Serveur   : ${message.guild.name}`,
+          `  📅 Date      : ${new Date().toLocaleString('fr-FR')}`,
+          `  💬 Messages  : ${allMessages.length}`,
+          `  🔗 ID Salon  : ${targetChannel.id}`,
+          separator,
+          '',
+        ];
+
+        for (const msg of allMessages) {
+          const date = msg.createdAt.toLocaleString('fr-FR', {
+            day: '2-digit', month: '2-digit', year: 'numeric',
+            hour: '2-digit', minute: '2-digit', second: '2-digit'
+          });
+          const authorTag = msg.author.tag;
+          const botTag = msg.author.bot ? ' [BOT]' : '';
+          let content = msg.content || '';
+
+          // Pièces jointes
+          if (msg.attachments.size > 0) {
+            const attachList = [...msg.attachments.values()]
+              .map(a => `📎 [Fichier: ${a.name}] → ${a.url}`)
+              .join('\n           ');
+            content += (content ? '\n           ' : '') + attachList;
+          }
+
+          // Embeds
+          if (msg.embeds.length > 0) {
+            const embedList = msg.embeds
+              .map(e => {
+                const title = e.title || 'Sans titre';
+                const desc = e.description ? ` — ${e.description.substring(0, 80)}${e.description.length > 80 ? '...' : ''}` : '';
+                return `📌 [Embed: ${title}${desc}]`;
+              })
+              .join('\n           ');
+            content += (content ? '\n           ' : '') + embedList;
+          }
+
+          // Stickers
+          if (msg.stickers.size > 0) {
+            const stickerList = [...msg.stickers.values()]
+              .map(s => `🎭 [Sticker: ${s.name}]`)
+              .join('\n           ');
+            content += (content ? '\n           ' : '') + stickerList;
+          }
+
+          // Réactions
+          if (msg.reactions.cache.size > 0) {
+            const reactionList = [...msg.reactions.cache.values()]
+              .map(r => `${r.emoji.name} ×${r.count}`)
+              .join(' ');
+            content += (content ? `\n           🔁 Réactions: ${reactionList}` : `🔁 Réactions: ${reactionList}`);
+          }
+
+          if (!content) content = '[Message vide ou non pris en charge]';
+
+          // Message épinglé
+          const pinned = msg.pinned ? ' 📌' : '';
+
+          lines.push(`[${date}]${pinned} ${authorTag}${botTag}`);
+          lines.push(`           ${content}`);
+          lines.push('');
+        }
+
+        lines.push(separator);
+        lines.push(`  Fin du transcript — ${allMessages.length} message(s) exporté(s)`);
+        lines.push(`  Généré par ${message.author.tag}`);
+        lines.push(separator);
+
+        const transcriptText = lines.join('\n');
+        const buffer = Buffer.from(transcriptText, 'utf-8');
+        const fileName = `transcript-${targetChannel.name}-${Date.now()}.txt`;
+        const attachment = new AttachmentBuilder(buffer, { name: fileName });
+
+        // Embed de confirmation
+        const confirmEmbed = new EmbedBuilder()
+          .setTitle('📄 Transcript généré')
+          .addFields(
+            { name: 'Salon', value: targetChannel.toString(), inline: true },
+            { name: 'Messages', value: `${allMessages.length}`, inline: true },
+            { name: 'Généré par', value: message.author.tag, inline: true },
+          )
+          .setColor('#2ED573')
+          .setFooter({ text: `Fichier : ${fileName}` })
+          .setTimestamp();
+
+        // Supprime le message de chargement
+        await loadingMsg.delete().catch(() => {});
+
+        // Envoi en DM
+        try {
+          await message.author.send({
+            content: `📄 Transcript de **#${targetChannel.name}** sur **${message.guild.name}** :`,
+            embeds: [confirmEmbed],
+            files: [attachment],
+          });
+          return message.reply({ content: `✅ Transcript envoyé en DM ! (**${allMessages.length}** messages exportés)`, embeds: [confirmEmbed] });
+        } catch (dmErr) {
+          // Fallback : envoi dans le salon courant si DMs fermés
+          await message.channel.send({
+            content: `📄 Impossible d'envoyer en DM — voici le transcript de **#${targetChannel.name}** :`,
+            embeds: [confirmEmbed],
+            files: [attachment],
+          });
+        }
+
+      } catch (err) {
+        console.error('Transcript error:', err);
+        await loadingMsg.delete().catch(() => {});
+        return message.reply('❌ Une erreur est survenue lors de la génération du transcript.');
+      }
+      break;
+    }
+
     default:
       break;
   }
@@ -998,6 +1151,7 @@ client.on('interactionCreate', async (interaction) => {
             { name: '`!lock / !unlock`', value: 'Verrouiller salon', inline: true },
             { name: '`!muteusersalon <@user> [#salon]`', value: 'Mute salon', inline: true },
             { name: '`!unmuteusersalon <@user> [#salon]`', value: 'Unmute salon', inline: true },
+            { name: '`!transcript [#salon]`', value: 'Transcript en .txt (DM)', inline: true },
           )],
         flags: MessageFlags.Ephemeral,
       });
