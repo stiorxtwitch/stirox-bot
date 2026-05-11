@@ -227,6 +227,8 @@ client.on('messageCreate', async (message) => {
             { name: '`!muteusersalon <@user> [#salon]`', value: 'Couper les messages d\'un user dans un salon', inline: true },
             { name: '`!unmuteusersalon <@user> [#salon]`', value: 'Rétablir les messages d\'un user dans un salon', inline: true },
             { name: '`!transcript [#salon]`', value: 'Transcript d\'un salon en .txt (DM)', inline: true },
+            { name: '`!security`', value: '🔒 Lockdown total anti-raid', inline: true },
+            { name: '`!unsecurity`', value: '🔓 Lever le lockdown', inline: true },
           )
           .setFooter({ text: `${config.botName} • Modération` });
         return message.reply({ embeds: [embed] });
@@ -977,7 +979,6 @@ client.on('messageCreate', async (message) => {
       const loadingMsg = await message.reply(`⏳ Génération du transcript de ${targetChannel} en cours...`);
 
       try {
-        // Fetch jusqu'à 500 messages (limite API Discord = 100 par requête)
         let allMessages = [];
         let lastId = null;
 
@@ -992,7 +993,6 @@ client.on('messageCreate', async (message) => {
           lastId = batch.last().id;
         }
 
-        // Tri chronologique (du plus ancien au plus récent)
         allMessages.reverse();
 
         if (allMessages.length === 0) {
@@ -1000,7 +1000,6 @@ client.on('messageCreate', async (message) => {
           return message.reply('❌ Aucun message trouvé dans ce salon.');
         }
 
-        // Génération du fichier texte
         const separator = '═'.repeat(50);
         const lines = [
           separator,
@@ -1022,7 +1021,6 @@ client.on('messageCreate', async (message) => {
           const botTag = msg.author.bot ? ' [BOT]' : '';
           let content = msg.content || '';
 
-          // Pièces jointes
           if (msg.attachments.size > 0) {
             const attachList = [...msg.attachments.values()]
               .map(a => `📎 [Fichier: ${a.name}] → ${a.url}`)
@@ -1030,7 +1028,6 @@ client.on('messageCreate', async (message) => {
             content += (content ? '\n           ' : '') + attachList;
           }
 
-          // Embeds
           if (msg.embeds.length > 0) {
             const embedList = msg.embeds
               .map(e => {
@@ -1042,7 +1039,6 @@ client.on('messageCreate', async (message) => {
             content += (content ? '\n           ' : '') + embedList;
           }
 
-          // Stickers
           if (msg.stickers.size > 0) {
             const stickerList = [...msg.stickers.values()]
               .map(s => `🎭 [Sticker: ${s.name}]`)
@@ -1050,7 +1046,6 @@ client.on('messageCreate', async (message) => {
             content += (content ? '\n           ' : '') + stickerList;
           }
 
-          // Réactions
           if (msg.reactions.cache.size > 0) {
             const reactionList = [...msg.reactions.cache.values()]
               .map(r => `${r.emoji.name} ×${r.count}`)
@@ -1060,7 +1055,6 @@ client.on('messageCreate', async (message) => {
 
           if (!content) content = '[Message vide ou non pris en charge]';
 
-          // Message épinglé
           const pinned = msg.pinned ? ' 📌' : '';
 
           lines.push(`[${date}]${pinned} ${authorTag}${botTag}`);
@@ -1078,7 +1072,6 @@ client.on('messageCreate', async (message) => {
         const fileName = `transcript-${targetChannel.name}-${Date.now()}.txt`;
         const attachment = new AttachmentBuilder(buffer, { name: fileName });
 
-        // Embed de confirmation
         const confirmEmbed = new EmbedBuilder()
           .setTitle('📄 Transcript généré')
           .addFields(
@@ -1090,10 +1083,8 @@ client.on('messageCreate', async (message) => {
           .setFooter({ text: `Fichier : ${fileName}` })
           .setTimestamp();
 
-        // Supprime le message de chargement
         await loadingMsg.delete().catch(() => {});
 
-        // Envoi en DM
         try {
           await message.author.send({
             content: `📄 Transcript de **#${targetChannel.name}** sur **${message.guild.name}** :`,
@@ -1102,7 +1093,6 @@ client.on('messageCreate', async (message) => {
           });
           return message.reply({ content: `✅ Transcript envoyé en DM ! (**${allMessages.length}** messages exportés)`, embeds: [confirmEmbed] });
         } catch (dmErr) {
-          // Fallback : envoi dans le salon courant si DMs fermés
           await message.channel.send({
             content: `📄 Impossible d'envoyer en DM — voici le transcript de **#${targetChannel.name}** :`,
             embeds: [confirmEmbed],
@@ -1116,6 +1106,121 @@ client.on('messageCreate', async (message) => {
         return message.reply('❌ Une erreur est survenue lors de la génération du transcript.');
       }
       break;
+    }
+
+    // ===== SECURITY (LOCKDOWN TOTAL ANTI-RAID) =====
+    case 'security': {
+      if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator))
+        return message.reply('❌ Permission refusée.');
+
+      const loadingMsg = await message.reply('🔒 Lockdown anti-raid en cours...');
+
+      if (!data.configs[message.guild.id]) data.configs[message.guild.id] = {};
+
+      // Sauvegarde les permissions actuelles de chaque rôle
+      const savedRolePerms = {};
+      for (const [roleId, role] of message.guild.roles.cache) {
+        if (role.managed) continue; // ignore les rôles intégrés (bots)
+        savedRolePerms[roleId] = role.permissions.bitfield.toString();
+        try {
+          await role.setPermissions(
+            role.permissions.remove(PermissionsBitField.Flags.SendMessages)
+          );
+        } catch {}
+      }
+
+      // Verrouille tous les salons textuels
+      const lockedChannels = [];
+      for (const [, channel] of message.guild.channels.cache) {
+        if (!channel.isTextBased()) continue;
+        try {
+          await channel.permissionOverwrites.edit(message.guild.roles.everyone, {
+            SendMessages: false,
+            AddReactions: false,
+            CreatePublicThreads: false,
+            CreatePrivateThreads: false,
+          });
+          lockedChannels.push(channel.id);
+        } catch {}
+      }
+
+      // Sauvegarde l'état du lockdown
+      data.configs[message.guild.id].lockdownActive = true;
+      data.configs[message.guild.id].lockdownChannels = lockedChannels;
+      data.configs[message.guild.id].savedRolePerms = savedRolePerms;
+      saveData(data);
+
+      const embed = new EmbedBuilder()
+        .setTitle('🔒 LOCKDOWN ACTIVÉ')
+        .setDescription('**Le serveur est en mode lockdown.**\nPlus personne ne peut envoyer de messages.\n\nUtilise `!unsecurity` pour lever le lockdown.')
+        .addFields(
+          { name: 'Salons verrouillés', value: `${lockedChannels.length}`, inline: true },
+          { name: 'Rôles restreints', value: `${Object.keys(savedRolePerms).length}`, inline: true },
+          { name: 'Déclenché par', value: message.author.tag, inline: true },
+        )
+        .setColor('#FF4757')
+        .setTimestamp();
+
+      await logAction(message.guild, embed, data);
+      await loadingMsg.delete().catch(() => {});
+      return message.reply({ embeds: [embed] });
+    }
+
+    // ===== UNSECURITY (LEVER LE LOCKDOWN) =====
+    case 'unsecurity': {
+      if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator))
+        return message.reply('❌ Permission refusée.');
+
+      const guildConfig = data.configs[message.guild.id];
+      if (!guildConfig?.lockdownActive)
+        return message.reply('ℹ️ Aucun lockdown actif sur ce serveur.');
+
+      const loadingMsg = await message.reply('🔓 Rétablissement en cours...');
+
+      // Restaure les permissions des rôles depuis la sauvegarde
+      const savedRolePerms = guildConfig.savedRolePerms || {};
+      for (const [roleId, permBit] of Object.entries(savedRolePerms)) {
+        const role = message.guild.roles.cache.get(roleId);
+        if (!role || role.managed) continue;
+        try {
+          await role.setPermissions(BigInt(permBit));
+        } catch {}
+      }
+
+      // Déverrouille tous les salons textuels
+      let restored = 0;
+      for (const [, channel] of message.guild.channels.cache) {
+        if (!channel.isTextBased()) continue;
+        try {
+          await channel.permissionOverwrites.edit(message.guild.roles.everyone, {
+            SendMessages: null,
+            AddReactions: null,
+            CreatePublicThreads: null,
+            CreatePrivateThreads: null,
+          });
+          restored++;
+        } catch {}
+      }
+
+      // Réinitialise l'état du lockdown
+      data.configs[message.guild.id].lockdownActive = false;
+      data.configs[message.guild.id].lockdownChannels = [];
+      data.configs[message.guild.id].savedRolePerms = {};
+      saveData(data);
+
+      const embed = new EmbedBuilder()
+        .setTitle('🔓 LOCKDOWN LEVÉ')
+        .setDescription('**Le serveur est de nouveau accessible.**\nToutes les permissions ont été rétablies.')
+        .addFields(
+          { name: 'Salons restaurés', value: `${restored}`, inline: true },
+          { name: 'Rétabli par', value: message.author.tag, inline: true },
+        )
+        .setColor('#2ED573')
+        .setTimestamp();
+
+      await logAction(message.guild, embed, data);
+      await loadingMsg.delete().catch(() => {});
+      return message.reply({ embeds: [embed] });
     }
 
     default:
@@ -1152,6 +1257,8 @@ client.on('interactionCreate', async (interaction) => {
             { name: '`!muteusersalon <@user> [#salon]`', value: 'Mute salon', inline: true },
             { name: '`!unmuteusersalon <@user> [#salon]`', value: 'Unmute salon', inline: true },
             { name: '`!transcript [#salon]`', value: 'Transcript en .txt (DM)', inline: true },
+            { name: '`!security`', value: '🔒 Lockdown total anti-raid', inline: true },
+            { name: '`!unsecurity`', value: '🔓 Lever le lockdown', inline: true },
           )],
         flags: MessageFlags.Ephemeral,
       });
